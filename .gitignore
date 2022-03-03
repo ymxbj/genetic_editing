@@ -1,6 +1,8 @@
 source_svg/
 target_image/
+target_svg/
 test.ipynb
 .ipynb_checkpoints/
 __pycache__/
 .vscode/
+.DS_Store

@@ -6,9 +6,10 @@ from cairosvg import svg2png
 import time
 import matplotlib.pyplot as plt
 import copy
-import string
+import argparse
 import random
 import re
+import os
 from IPython.display import clear_output
 
 class SVG:
@@ -40,6 +41,7 @@ class Editer:
         self.cur = 0
         self.height,self.width = self.img_grey.shape
         self.seed = seed
+        self.inital_length = None
 
 
     def InitPopulation(self):
@@ -58,7 +60,9 @@ class Editer:
                 arg = path_splited[i].split()
                 for j in range(len(arg)):
                     command.append(eval(arg[j]))
+                command.append(True)
                 svg_seq.append(command)
+        self.inital_length = len(svg_seq)
         for i in range(self.pop_size):
             svg = SVG(copy.deepcopy(svg_seq))
             self.population[self.cur].append(svg)
@@ -68,7 +72,7 @@ class Editer:
         svg_seq = svg.svg_seq
         svg_str = ''
         for i in range(len(svg_seq)):
-            for j in svg_seq[i]:
+            for j in svg_seq[i][:-1]:
                 svg_str += str(j)
                 svg_str += ' '
         svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
@@ -83,7 +87,7 @@ class Editer:
     def DrawSeq(self, svg_seq):
         svg_str = ''
         for i in range(len(svg_seq)):
-            for j in svg_seq[i]:
+            for j in svg_seq[i][:-1]:
                 svg_str += str(j)
                 svg_str += ' '
         svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
@@ -100,7 +104,14 @@ class Editer:
         diff2 = cv2.subtract(render_img,self.img_grey) #values are too high
         totalDiff = cv2.add(diff1, diff2)
         totalDiff = np.sum(totalDiff)
-        return totalDiff / (self.height * self.width)
+        totalDiff = totalDiff / (self.height * self.width)
+        return totalDiff
+
+    def TotalLoss(self, svg_seq):
+        render_img = self.DrawSeq(svg_seq)
+        totalDiff = self.Evaluate(render_img)
+        totalLoss = 0.8 * totalDiff + 0.2 * len(svg_seq)
+        return totalLoss
 
     def EvaluatePopulation(self):
         loss_best = 1e12
@@ -167,16 +178,17 @@ class Editer:
                 cache_error = tmp_error
                 svg_seq[idx] = command[:]
 
-
-    def MutateCommand(self, svg, blur_percent,prob_insert):
+    def InsertCommand(self, svg, blur_percent):
         svg_seq = svg.svg_seq
         tmp_img = self.Draw(svg)
         diff1 = cv2.subtract(self.img_grey, tmp_img) #values are too low
         diff2 = cv2.subtract(tmp_img,self.img_grey) #values are too high
         totalDiff = cv2.add(diff1, diff2)
         img = np.copy(totalDiff)
-        plt.imshow(img, cmap='gray')
-        plt.show()
+        if not __debug__:
+            plt.figure()
+            plt.subplot(1, 2, 1)
+            plt.imshow(img, cmap='gray')
         # Calculate gradient
         gx = cv2.Sobel(img, cv2.CV_32F, 1, 0, ksize=1)
         gy = cv2.Sobel(img, cv2.CV_32F, 0, 1, ksize=1)
@@ -189,25 +201,43 @@ class Editer:
         #ensure range from 0-255 (mostly for visual debugging, since in sampling we will renormalize it anyway)
         scale = 255.0/mag.max()
         mag = mag*scale
-        plt.imshow(mag, cmap='gray')
-        plt.show()
-        index = 0
-        for i in range(len(svg_seq)-1):
-            if random.random() < prob_insert:
-                posX, posY = util_sample_from_img(mag)
+        if not __debug__:
+            plt.subplot(1, 2, 2)
+            plt.imshow(mag, cmap='gray')
+            plt.show()
+        index = 1
+        for i in range(1, len(svg_seq)):
+            curX = svg_seq[index][-3]
+            curY = svg_seq[index][-2]
+            if mag[int(curY)][int(curX)] > 100:
+                while(True):
+                        posX, posY = util_sample_from_img(mag)
+                        dis = ((posX - curX)**2 + (posY - curY)**2)**0.5
+                        if dis < 10:
+                            break
                 if random.random() < 0.5:
-                    command = ['L', posX, posY]
+                    command = ['L', posX, posY, False]
                     svg_seq.insert(index+1, command)
                 else:
-                    curX = svg_seq[index][-2]
-                    curY = svg_seq[index][-1]
-                    command = ['C', curX + (posX - curX)/3,curY + (posY - curY)/3, 2*(posX - curX)/3,2*(posY - curY)/3, posX, posY]
+                    command = ['C', curX + (posX - curX)/3,curY + (posY - curY)/3, curX + 2*(posX - curX)/3, curY + 2*(posY - curY)/3, posX, posY, False]
                     svg_seq.insert(index+1, command)
                 index += 1
             index += 1
 
+    # def DeleteCommand(self, svg):
+    #     svg_seq = svg.svg_seq
+    #     cache_totalloss = self.TotalLoss(svg_seq)
+    #     for i in range(len(svg_seq)):
+    #         tmp_seq = copy.deepcopy(svg_seq)
+    #         if tmp_seq[i][-1] == False:
+    #             del tmp_seq[i]
+    #             totalloss = self.TotalLoss(tmp_seq)
+    #             if totalloss < cache_totalloss:
+    #                 del svg_seq[i]
+    #                 cache_totalloss = totalloss
+
     def Mutate(self, svg, blur_percent,prob_insert, seed):
-        # self.MutateCommand(svg, blur_percent,prob_insert)
+        self.InsertCommand(svg, blur_percent,prob_insert)
         self.MutatePos(svg, seed)
 
 
@@ -229,24 +259,41 @@ class Editer:
         c = []
         svg_seq1 = svg1.svg_seq
         svg_seq2 = svg2.svg_seq
-        len1 = len(svg_seq1)
-        len2 = len(svg_seq2)
-        min_len = min(len1, len2)
-        max_len = max(len1, len2)
-        if len1 < len2:
-            min_seq = svg_seq1
-            max_seq = svg_seq2
+        middle_len = self.inital_length // 2
+        if random.random() < 0.5:
+            first_seq = svg_seq1
+            second_seq = svg_seq2
         else:
-            min_seq = svg_seq2
-            max_seq = svg_seq1
-        for i in range(min_len // 2):
-            c.append(min_seq[i])
-        for i in range(min_len // 2, max_len):
-            c.append(max_seq[i])
+            first_seq = svg_seq2
+            second_seq = svg_seq1
+
+        len1 = len(first_seq)
+        len2 = len(second_seq)
+        index = 0
+        num = 0
+        while(True):
+            if first_seq[index][-1] == False:
+                c.append(first_seq[index])
+            elif first_seq[index][-1] == True:
+                c.append(first_seq[index])
+                num += 1
+            index += 1
+            if num == middle_len:
+                break
+        index = 0
+        num = 0
+        while(True):
+            if second_seq[index][-1] == True:
+                num += 1
+            index += 1
+            if num == middle_len:
+                break
+        for i in range(index,len2):
+            c.append(second_seq[i])
         new_svg = SVG(copy.deepcopy(c))
         return new_svg
 
-    def Edit(self, generations, xi, decay, prob_crs, prob_mut):
+    def Edit(self, generations, xi, decay, prob_crs):
         self.InitPopulation()
         p_best, p_worst = self.EvaluatePopulation()
         txi = xi
@@ -254,37 +301,52 @@ class Editer:
             clear_output(wait=True)
             print("Generation ", g+1, "/", generations)
             print(self.population[self.cur][p_best].loss)
+            print(len(self.population[self.cur][p_best].svg_seq))
             self.ComputeCrossProb(txi, self.population[self.cur][p_worst].loss)
             txi /= decay
-            for i in range(self.pop_size):
-                p1 = self.Upper_bound(self.pp, random.random())
-                p2 = self.Upper_bound(self.pp, random.random())
-                self.population[1 - self.cur][i] = copy.deepcopy(self.population[self.cur][p1])
-                # if random.random() < prob_crs:
-                #     self.population[1 - self.cur][i] = self.CrossOver(self.population[self.cur][p1],self.population[self.cur][p2])
+            if g < 50 or (g > 160 and g < 200) or (g > 300 and g < 350):
+                for i in range(self.pop_size):
+                    p1 = self.Upper_bound(self.pp, random.random())
+                    p2 = self.Upper_bound(self.pp, random.random())
+                    self.population[1 - self.cur][i] = copy.deepcopy(self.population[self.cur][p1])
+                    if random.random() < prob_crs:
+                        self.population[1 - self.cur][i] = self.CrossOver(self.population[self.cur][p1],self.population[self.cur][p2])
+            else:
+                for i in range(self.pop_size):
+                    self.population[1 - self.cur][i] = copy.deepcopy(self.population[self.cur][i])
 
             for i in range(self.pop_size):
-                # if random.random() < prob_mut:
-                    self.Mutate(self.population[1 - self.cur][i],0.05, 0.1 , self.seed + time.time() + g)
-
-            # for i in range(1, self.pop_size + 1):
-            #     tmp_img = self.Draw(self.population[1 - self.cur][i-1])
-            #     plt.subplot(2, 5, i)
-            #     plt.imshow(tmp_img, cmap='gray')
-            # plt.show()
+                if g == 50 or g ==200:
+                    if not __debug__:
+                        tmp_img = self.Draw(self.population[1 - self.cur][i])
+                    self.InsertCommand(self.population[1 - self.cur][i], 0.02)
+                    if not __debug__:
+                        plt.figure()
+                        plt.subplot(1,2,1)
+                        plt.imshow(tmp_img, cmap='gray')
+                        tmp_img = self.Draw(self.population[1 - self.cur][i])
+                        plt.subplot(1,2,2)
+                        plt.imshow(tmp_img, cmap='gray')
+                        plt.show()
+                self.MutatePos(self.population[1 - self.cur][i], self.seed + time.time() + g)
 
             self.cur = 1 - self.cur
             c_best, c_worst = self.EvaluatePopulation()
-            if self.population[1 - self.cur][p_best].loss < self.population[self.cur][c_best].loss:
-                self.population[self.cur][c_worst] = copy.deepcopy(self.population[1 - self.cur][p_best])
-                p_best = c_worst
+
+            if g < 50 or (g > 160 and g < 200) or (g > 300 and g < 350):
+                if self.population[1 - self.cur][p_best].loss < self.population[self.cur][c_best].loss:
+                    self.population[self.cur][c_worst] = copy.deepcopy(self.population[1 - self.cur][p_best])
+                    p_best = c_worst
+                else:
+                    p_best = c_best
+                loss_worst = 0
+                for i in range(self.pop_size):
+                    if self.population[self.cur][i].loss > loss_worst:
+                        loss_worst = self.population[self.cur][i].loss
+                        p_worst = i
             else:
                 p_best = c_best
-            loss_worst = 0
-            for i in range(self.pop_size):
-                if self.population[self.cur][i].loss > loss_worst:
-                    loss_worst = self.population[self.cur][i].loss
-                    p_worst = i
+                p_worst = c_worst
 
         final_svg =  self.population[self.cur][p_best]
         final_img = self.Draw(final_svg)
@@ -293,16 +355,36 @@ class Editer:
         totalDiff = cv2.add(diff1, diff2)
         return final_svg, final_img, totalDiff
 
+def save_svg(svg, target_dir, name):
+    if not os.path.exists(target_dir):
+        os.mkdir(target_dir)
+    svg_seq = svg.svg_seq
+    svg_str = ''
+    for i in range(len(svg_seq)):
+        for j in svg_seq[i][:-1]:
+            svg_str += str(j)
+            svg_str += ' '
+    svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
+    svg_data += '<path d="%s" stroke-width="1.0" fill="rgb(0, 0, 0)" opacity="1.0"/></g></svg>'%svg_str
+    svg_outfile = os.path.join(target_dir, f"{name}.svg")
+    svg_f = open(svg_outfile, 'w')
+    svg_f.write(svg_data)
+    svg_f.close()
 
 def main():
-    editer = Editer('target_image/I10.png','source_svg/I.svg', 10, seed=time.time())
-    svg, img, totalDiff= editer.Edit(100, 20, 0.9, 0.8, 0.9)
-    print(svg)
+    parser = argparse.ArgumentParser(description="LMDB creation")
+    parser.add_argument('--char_class', type=str, default='A')
+    opts = parser.parse_args()
+    editer = Editer(f'target_image/{opts.char_class}.png',f'source_svg/{opts.char_class}.svg', 10, seed=time.time())
+    target_dir = 'target_svg'
+    svg, img, totalDiff= editer.Edit(350, 20, 0.9, 0.8)
+    plt.figure()
     plt.subplot(1, 2, 1)
     plt.imshow(img, cmap = 'gray')
     plt.subplot(1, 2, 2)
     plt.imshow(totalDiff, cmap = 'gray')
     plt.show()
+    save_svg(svg, target_dir, opts.char_class)
 
 if __name__ == '__main__':
     main()
