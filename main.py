@@ -61,6 +61,7 @@ class Editer:
                 for j in range(len(arg)):
                     command.append(eval(arg[j]))
                 command.append(True)
+                command.append('modify')
                 svg_seq.append(command)
         self.inital_length = len(svg_seq)
         for i in range(self.pop_size):
@@ -72,7 +73,7 @@ class Editer:
         svg_seq = svg.svg_seq
         svg_str = ''
         for i in range(len(svg_seq)):
-            for j in svg_seq[i][:-1]:
+            for j in svg_seq[i][:-2]:
                 svg_str += str(j)
                 svg_str += ' '
         svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
@@ -87,7 +88,7 @@ class Editer:
     def DrawSeq(self, svg_seq):
         svg_str = ''
         for i in range(len(svg_seq)):
-            for j in svg_seq[i][:-1]:
+            for j in svg_seq[i][:-2]:
                 svg_str += str(j)
                 svg_str += ' '
         svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
@@ -150,6 +151,8 @@ class Editer:
         cache_image = self.Draw(svg)
         cache_error = self.Evaluate(cache_image)
         for idx in range(len(svg_seq)):
+            if svg_seq[idx][-1] == 'fix':
+                continue
             tmp_seq = copy.deepcopy(svg_seq)
             command = tmp_seq[idx]
             #mutate the child
@@ -205,10 +208,10 @@ class Editer:
             plt.subplot(1, 2, 2)
             plt.imshow(mag, cmap='gray')
             plt.show()
-        index = 1
-        for i in range(1, len(svg_seq)):
-            curX = svg_seq[index][-3]
-            curY = svg_seq[index][-2]
+        index = 0
+        for i in range(0, len(svg_seq)):
+            curX = svg_seq[index][-4]
+            curY = svg_seq[index][-3]
             if mag[int(curY)][int(curX)] > 100:
                 while(True):
                         posX, posY = util_sample_from_img(mag)
@@ -216,12 +219,17 @@ class Editer:
                         if dis < 10:
                             break
                 if random.random() < 0.5:
-                    command = ['L', posX, posY, False]
+                    command = ['L', posX, posY, False, 'modify']
                     svg_seq.insert(index+1, command)
                 else:
-                    command = ['C', curX + (posX - curX)/3,curY + (posY - curY)/3, curX + 2*(posX - curX)/3, curY + 2*(posY - curY)/3, posX, posY, False]
+                    command = ['C', curX + (posX - curX)/3,curY + (posY - curY)/3, curX + 2*(posX - curX)/3, curY + 2*(posY - curY)/3, posX, posY, False, 'modify']
                     svg_seq.insert(index+1, command)
+                    if (index+1) != len(svg_seq)-1:
+                        svg_seq[index + 2][-1] = 'involve_modify'
                 index += 1
+            elif mag[int(curY)][int(curX)] < 60:
+                if svg_seq[index][-1] != 'involve_modify':
+                    svg_seq[index][-1] = 'fix'
             index += 1
 
     # def DeleteCommand(self, svg):
@@ -236,10 +244,10 @@ class Editer:
     #                 del svg_seq[i]
     #                 cache_totalloss = totalloss
 
-    def Mutate(self, svg, blur_percent,prob_insert, seed):
-        self.InsertCommand(svg, blur_percent,prob_insert)
-        self.MutatePos(svg, seed)
-
+    def ModifyAll(self):
+        for i in range(self.pop_size):
+            for command in self.population[self.cur][i].svg_seq:
+                command[-1] = 'modify'
 
     def Upper_bound(self, pp, target):
         low, high = 0, len(pp)-1
@@ -272,9 +280,9 @@ class Editer:
         index = 0
         num = 0
         while(True):
-            if first_seq[index][-1] == False:
+            if first_seq[index][-2] == False:
                 c.append(first_seq[index])
-            elif first_seq[index][-1] == True:
+            elif first_seq[index][-2] == True:
                 c.append(first_seq[index])
                 num += 1
             index += 1
@@ -283,7 +291,7 @@ class Editer:
         index = 0
         num = 0
         while(True):
-            if second_seq[index][-1] == True:
+            if second_seq[index][-2] == True:
                 num += 1
             index += 1
             if num == middle_len:
@@ -304,7 +312,10 @@ class Editer:
             print(len(self.population[self.cur][p_best].svg_seq))
             self.ComputeCrossProb(txi, self.population[self.cur][p_worst].loss)
             txi /= decay
-            if g < 50 or (g > 160 and g < 200) or (g > 300 and g < 350):
+            if g == 380:
+                self.ModifyAll()
+
+            if g < 100 or (g > 210 and g < 250) or (g > 350 and g < 400):
                 for i in range(self.pop_size):
                     p1 = self.Upper_bound(self.pp, random.random())
                     p2 = self.Upper_bound(self.pp, random.random())
@@ -316,7 +327,7 @@ class Editer:
                     self.population[1 - self.cur][i] = copy.deepcopy(self.population[self.cur][i])
 
             for i in range(self.pop_size):
-                if g == 50 or g ==200:
+                if g == 100 or g == 250:
                     if not __debug__:
                         tmp_img = self.Draw(self.population[1 - self.cur][i])
                     self.InsertCommand(self.population[1 - self.cur][i], 0.02)
@@ -333,7 +344,7 @@ class Editer:
             self.cur = 1 - self.cur
             c_best, c_worst = self.EvaluatePopulation()
 
-            if g < 50 or (g > 160 and g < 200) or (g > 300 and g < 350):
+            if g < 100 or (g > 210 and g < 250) or (g > 350 and g < 400):
                 if self.population[1 - self.cur][p_best].loss < self.population[self.cur][c_best].loss:
                     self.population[self.cur][c_worst] = copy.deepcopy(self.population[1 - self.cur][p_best])
                     p_best = c_worst
@@ -361,7 +372,7 @@ def save_svg(svg, target_dir, name):
     svg_seq = svg.svg_seq
     svg_str = ''
     for i in range(len(svg_seq)):
-        for j in svg_seq[i][:-1]:
+        for j in svg_seq[i][:-2]:
             svg_str += str(j)
             svg_str += ' '
     svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
@@ -373,17 +384,19 @@ def save_svg(svg, target_dir, name):
 
 def main():
     parser = argparse.ArgumentParser(description="LMDB creation")
-    parser.add_argument('--char_class', type=str, default='A')
+    parser.add_argument('--char_class', type=str, default='B')
     opts = parser.parse_args()
+    print(opts.char_class)
     editer = Editer(f'target_image/{opts.char_class}.png',f'source_svg/{opts.char_class}.svg', 10, seed=time.time())
     target_dir = 'target_svg'
-    svg, img, totalDiff= editer.Edit(350, 20, 0.9, 0.8)
-    plt.figure()
-    plt.subplot(1, 2, 1)
-    plt.imshow(img, cmap = 'gray')
-    plt.subplot(1, 2, 2)
-    plt.imshow(totalDiff, cmap = 'gray')
-    plt.show()
+    svg, img, totalDiff= editer.Edit(400, 20, 0.9, 0.8)
+    if not __debug__:
+        plt.figure()
+        plt.subplot(1, 2, 1)
+        plt.imshow(img, cmap = 'gray')
+        plt.subplot(1, 2, 2)
+        plt.imshow(totalDiff, cmap = 'gray')
+        plt.show()
     save_svg(svg, target_dir, opts.char_class)
 
 if __name__ == '__main__':

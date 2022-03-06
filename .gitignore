@@ -1,6 +1,7 @@
 source_svg/
 target_image/
 target_svg/
+experiment/
 test.ipynb
 .ipynb_checkpoints/
 __pycache__/
