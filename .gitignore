@@ -1,8 +1,8 @@
 source_svg/
 target_image/
+target_svg_outlines/
 target_svg/
-experiment/
-test.ipynb
+draw_svg_outlines/
 .ipynb_checkpoints/
 __pycache__/
 .vscode/
