@@ -102,9 +102,10 @@ class Editer:
         svg_seq = svg.svg_seq
         svg_str = ''
         for i in range(len(svg_seq)):
-            for j in svg_seq[i][:-2]:
-                svg_str += str(j)
-                svg_str += ' '
+            if svg_seq[i][-2] != 'del_true' and svg_seq[i][-2] != 'del_false':
+                for j in svg_seq[i][:-2]:
+                    svg_str += str(j)
+                    svg_str += ' '
         svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
         svg_data += '<path d="%s" stroke-width="1.0" fill="rgb(0, 0, 0)" opacity="1.0"/></g></svg>'%svg_str
         png = svg2png(bytestring=svg_data)
@@ -118,9 +119,10 @@ class Editer:
         svg_seq = svg.svg_seq
         svg_str = ''
         for i in range(len(svg_seq)):
-            for j in svg_seq[i][:-2]:
-                svg_str += str(j)
-                svg_str += ' '
+            if svg_seq[i][-2] != 'del_true' and svg_seq[i][-2] != 'del_false':
+                for j in svg_seq[i][:-2]:
+                    svg_str += str(j)
+                    svg_str += ' '
         svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
         svg_data += '<path d="%s" fill="none" stroke="black" stroke-width="2.0"/></g></svg>'%svg_str
         png = svg2png(bytestring=svg_data)
@@ -133,9 +135,10 @@ class Editer:
     def DrawSeq(self, svg_seq):
         svg_str = ''
         for i in range(len(svg_seq)):
-            for j in svg_seq[i][:-2]:
-                svg_str += str(j)
-                svg_str += ' '
+            if svg_seq[i][-2] != 'del_true' and svg_seq[i][-2] != 'del_false':
+                for j in svg_seq[i][:-2]:
+                    svg_str += str(j)
+                    svg_str += ' '
         svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
         svg_data += '<path d="%s" stroke-width="1.0" fill="rgb(0, 0, 0)" opacity="1.0"/></g></svg>'%svg_str
         png = svg2png(bytestring=svg_data)
@@ -148,9 +151,10 @@ class Editer:
     def DrawSeqOutline(self, svg_seq):
         svg_str = ''
         for i in range(len(svg_seq)):
-            for j in svg_seq[i][:-2]:
-                svg_str += str(j)
-                svg_str += ' '
+            if svg_seq[i][-2] != 'del_true' and svg_seq[i][-2] != 'del_false':
+                for j in svg_seq[i][:-2]:
+                    svg_str += str(j)
+                    svg_str += ' '
         svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
         svg_data += '<path d="%s" fill="none" stroke="black" stroke-width="2.0"/></g></svg>'%svg_str
         png = svg2png(bytestring=svg_data)
@@ -228,7 +232,7 @@ class Editer:
         cache_outline = self.DrawOutline(svg)
         cache_error = self.Evaluate(cache_image, cache_outline)
         for idx in range(len(svg_seq)):
-            if svg_seq[idx][-1] == 'fix':
+            if svg_seq[idx][-1] == 'fix' or svg_seq[idx][-2] == 'del_true' or svg_seq[idx][-2] == 'del_false':
                 continue
             tmp_seq = copy.deepcopy(svg_seq)
             command = tmp_seq[idx]
@@ -299,6 +303,9 @@ class Editer:
             plt.show()
         index = 0
         for i in range(0, len(svg_seq)):
+            if svg_seq[index][-2] == 'del_true' or svg_seq[index][-2] == 'del_false':
+                index += 1
+                continue
             curX = svg_seq[index][-4]
             curY = svg_seq[index][-3]
             if self.CheckNeedInsert(mag, int(curX), int(curY)):
@@ -347,34 +354,36 @@ class Editer:
 
     def DeleteCommand(self, svg_seq):
         return_svg_seq = copy.deepcopy(svg_seq)
-        index = 2
         for i in range(2, len(return_svg_seq)):
             tmp_seq = copy.deepcopy(return_svg_seq)
-            delete_command = tmp_seq[index]
-            if delete_command[-2] == True:
-                index += 1
+            delete_command = tmp_seq[i]
+            if delete_command[-2] == 'del_true' or delete_command[-2] == 'del_false':
                 continue
-            else:
-                last_command = tmp_seq[index - 1]
-                curX = delete_command[-4]
-                curY = delete_command[-3]
-                del tmp_seq[index]
-                if last_command[0] == 'L':
-                    last_command[1] = curX
-                    last_command[2] = curY
-                elif last_command[0] == 'C':
-                    last_command[-4] = curX
-                    last_command[-3] = curY
-                cur_render_img = self.DrawSeq(return_svg_seq)
-                cur_render_outlines = self.DrawSeqOutline(return_svg_seq)
-                current_loss = self.Evaluate(cur_render_img, cur_render_outlines)
-                del_render_img = self.DrawSeq(tmp_seq)
-                del_render_outlines = self.DrawSeqOutline(tmp_seq)
-                delete_loss = self.Evaluate(del_render_img, del_render_outlines)
-                if delete_loss  <= current_loss + 0.25:
-                    return_svg_seq = copy.deepcopy(tmp_seq)
-                else:
-                    index += 1
+            index = i - 1
+            last_command = tmp_seq[index]
+            while(last_command[-2]=='del_true' or last_command[-2]=='del_false'):
+                index -= 1
+                last_command = tmp_seq[index]
+            curX = delete_command[-4]
+            curY = delete_command[-3]
+            if delete_command[-2] == True:
+                delete_command[-2] = 'del_true'
+            elif delete_command[-2] == False:
+                delete_command[-2] = 'del_false'
+            if last_command[0] == 'L':
+                last_command[1] = curX
+                last_command[2] = curY
+            elif last_command[0] == 'C':
+                last_command[-4] = curX
+                last_command[-3] = curY
+            cur_render_img = self.DrawSeq(return_svg_seq)
+            cur_render_outlines = self.DrawSeqOutline(return_svg_seq)
+            current_loss = self.Evaluate(cur_render_img, cur_render_outlines)
+            del_render_img = self.DrawSeq(tmp_seq)
+            del_render_outlines = self.DrawSeqOutline(tmp_seq)
+            delete_loss = self.Evaluate(del_render_img, del_render_outlines)
+            if delete_loss  <= current_loss + 0.25:
+                return_svg_seq = copy.deepcopy(tmp_seq)
         return return_svg_seq
 
     def ModifyAll(self):
@@ -415,7 +424,7 @@ class Editer:
         while(True):
             if first_seq[index][-2] == False:
                 c.append(first_seq[index])
-            elif first_seq[index][-2] == True:
+            elif first_seq[index][-2] == True or first_seq[index][-2] == 'del_true':
                 c.append(first_seq[index])
                 num += 1
             index += 1
@@ -424,13 +433,14 @@ class Editer:
         index = 0
         num = 0
         while(True):
-            if second_seq[index][-2] == True:
+            if second_seq[index][-2] == True or second_seq[index][-2] == 'del_true':
                 num += 1
             index += 1
             if num == middle_len:
                 break
         for i in range(index,len2):
-            c.append(second_seq[i])
+            if second_seq[i][-2] != 'del_false':
+                c.append(second_seq[i])
         new_svg = SVG(copy.deepcopy(c))
         return new_svg
 
@@ -438,11 +448,16 @@ class Editer:
         self.InitPopulation()
         p_best, p_worst = self.EvaluatePopulation()
         txi = xi
+        # target_outlines_dir = f'target_svg_outlines/{opts.font_class}'
         for g in range(generations):
             clear_output(wait=True)
             print("Generation ", g+1, "/", generations)
             print(self.population[self.cur][p_best].loss)
-            print(len(self.population[self.cur][p_best].svg_seq))
+            length = 0
+            for command in self.population[self.cur][p_best].svg_seq:
+                if command[-2] != 'del_true' and command[-2] != 'del_false':
+                    length += 1
+            print(length)
             self.ComputeCrossProb(txi, self.population[self.cur][p_worst].loss)
             moving_dis = 2
             decay_rate = 0.9
@@ -450,6 +465,9 @@ class Editer:
                 moving_dis = moving_dis * np.power(decay_rate, (g-400) // 10 )
             if g == 380:
                 self.ModifyAll()
+
+            # if g == 100:
+            #     save_svg_outlines(self.population[self.cur][p_best], target_outlines_dir, opts.char_class)
 
             if g < 100 or (g > 210 and g < 250) or (g > 350 and g < 400):
                 txi *= decay
@@ -476,7 +494,7 @@ class Editer:
                         plt.subplot(1,2,2)
                         plt.imshow(tmp_img, cmap='gray')
                         plt.show()
-                if g == 200 or g == 350 or g == 380:
+                if g == 80 or g == 200 or g == 350 or g == 380:
                     self.population[1 - self.cur][i].svg_seq = copy.deepcopy(self.DeleteCommand(self.population[1 - self.cur][i].svg_seq))
                 self.MutatePos(self.population[1 - self.cur][i],moving_dis, self.seed + time.time() + g)
 
@@ -498,7 +516,11 @@ class Editer:
                 p_best = c_best
                 p_worst = c_worst
 
+            # if self.population[self.cur][p_best].loss < 2.4:
+            #     break
+
         final_svg =  self.population[self.cur][p_best]
+        repair_svg(final_svg)
         final_img = self.Draw(final_svg)
         diff1 = cv2.subtract(self.img_grey, final_img) #values are too low
         diff2 = cv2.subtract(final_img,self.img_grey) #values are too high
@@ -528,9 +550,10 @@ def save_svg(svg, target_dir, name):
     svg_seq = svg.svg_seq
     svg_str = ''
     for i in range(len(svg_seq)):
-        for j in svg_seq[i][:-2]:
-            svg_str += str(j)
-            svg_str += ' '
+        if svg_seq[i][-2] != 'del_true' and svg_seq[i][-2] != 'del_false':
+            for j in svg_seq[i][:-2]:
+                svg_str += str(j)
+                svg_str += ' '
     svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
     svg_data += '<path d="%s" stroke-width="1.0" fill="rgb(0, 0, 0)" opacity="1.0"/></g></svg>'%svg_str
     svg_outfile = os.path.join(target_dir, f"{name}.svg")
@@ -544,9 +567,10 @@ def save_svg_outlines(svg, target_outlines_dir, name):
     svg_seq = svg.svg_seq
     svg_str = ''
     for i in range(len(svg_seq)):
-        for j in svg_seq[i][:-2]:
-            svg_str += str(j)
-            svg_str += ' '
+        if svg_seq[i][-2] != 'del_true' and svg_seq[i][-2] != 'del_false':
+            for j in svg_seq[i][:-2]:
+                svg_str += str(j)
+                svg_str += ' '
     svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
     svg_data += '<path d="%s" fill="none" stroke="black" stroke-width="2.0"/></g></svg>'%svg_str
     svg_outfile = os.path.join(target_outlines_dir, f"{name}.svg")
@@ -557,13 +581,13 @@ def save_svg_outlines(svg, target_outlines_dir, name):
 def main():
     parser = argparse.ArgumentParser(description="svg genetic editing")
     parser.add_argument('--char_class', type=str, default='A')
+    parser.add_argument('--font_class', type=str, default='149')
     opts = parser.parse_args()
     print(opts.char_class)
-    editer = Editer(f'target_image/149/{opts.char_class}.png',f'source_svg/149/{opts.char_class}.svg', 10, seed=time.time())
-    target_dir = 'target_svg/149'
-    target_outlines_dir = 'target_svg_outlines/149'
+    editer = Editer(f'target_image/{opts.font_class}/{opts.char_class}.png',f'source_svg/{opts.font_class}/{opts.char_class}.svg', 10, seed=time.time())
+    target_dir = f'target_svg/{opts.font_class}'
+    target_outlines_dir = f'target_svg_outlines/{opts.font_class}'
     svg, img, totalDiff= editer.Edit(400, 20, 0.9, 0.8)
-    repair_svg(svg)
     if not __debug__:
         plt.figure()
         plt.subplot(1, 2, 1)
