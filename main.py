@@ -320,8 +320,14 @@ class Editer:
                 else:
                     command = ['C', curX + (posX - curX)/3,curY + (posY - curY)/3, curX + 2*(posX - curX)/3, curY + 2*(posY - curY)/3, posX, posY, False, 'modify']
                     svg_seq.insert(index + 1, command)
-                    if (index + 1) != len(svg_seq)-1:
-                        svg_seq[index + 2][-1] = 'involve_modify'
+                if (index + 1) != len(svg_seq) - 1:
+                    tmp_index = index + 2
+                    while svg_seq[tmp_index][-2] == 'del_true' or svg_seq[tmp_index][-2] == 'del_false':
+                        tmp_index += 1
+                        if tmp_index == len(svg_seq):
+                            break
+                    if tmp_index != len(svg_seq):
+                        svg_seq[tmp_index][-1] = 'involve_modify'
                 index += 1
             elif mag[int(curY)][int(curX)] < 60:
                 if svg_seq[index][-1] != 'involve_modify':
@@ -444,11 +450,11 @@ class Editer:
         new_svg = SVG(copy.deepcopy(c))
         return new_svg
 
-    def Edit(self, generations, xi, decay, prob_crs):
+    def Edit(self, generations, xi, decay, prob_crs, opts):
         self.InitPopulation()
         p_best, p_worst = self.EvaluatePopulation()
         txi = xi
-        # target_outlines_dir = f'target_svg_outlines/{opts.font_class}'
+        target_outlines_dir = f'target_svg_outlines/{opts.font_class}'
         for g in range(generations):
             clear_output(wait=True)
             print("Generation ", g+1, "/", generations)
@@ -587,7 +593,7 @@ def main():
     editer = Editer(f'target_image/{opts.font_class}/{opts.char_class}.png',f'source_svg/{opts.font_class}/{opts.char_class}.svg', 10, seed=time.time())
     target_dir = f'target_svg/{opts.font_class}'
     target_outlines_dir = f'target_svg_outlines/{opts.font_class}'
-    svg, img, totalDiff= editer.Edit(400, 20, 0.9, 0.8)
+    svg, img, totalDiff= editer.Edit(400, 20, 0.9, 0.8, opts)
     if not __debug__:
         plt.figure()
         plt.subplot(1, 2, 1)
