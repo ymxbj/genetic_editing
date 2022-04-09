@@ -80,7 +80,7 @@ def main():
     opts = parser.parse_args()
     char_class = opts.char_class
 
-    fin = open(f'target_svg/149/{char_class}.svg','r')
+    fin = open(f'target_svg/149_2/{char_class}.svg','r')
     svgs = fin.read().split('d="')
 
     svg = svgs[1]
@@ -132,7 +132,7 @@ def main():
             cur_y = cmd.y4
             commands.append(cmd)
 
-    draw_pic(commands,f'draw_svg_outlines/149/target_svg/{char_class}.svg')
+    draw_pic(commands,f'draw_svg_outlines/149_2/target_svg/{char_class}.svg')
 
 if __name__ == '__main__':
     main()

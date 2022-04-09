@@ -32,7 +32,6 @@ def util_sample_from_img(img):
     posX = pos[1][0]
     return posX, posY
 
-
 class Editer:
     def __init__(self,img_path,svg_path, pop_size, seed = 0):
         self.img_grey = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
@@ -60,42 +59,88 @@ class Editer:
         path = path_.split('" stroke')[0]
         path_splited = re.split(r"([MLC])", path)
         path_splited = path_splited[1:]
-        svg_seq = []
+        svg_seq1 = []
+        svg_seq2 = []
         command = []
-        for i in range(len(path_splited)):
-            if i%2 == 0:
-                command = []
-                command.append(path_splited[i])
-            elif i%2 == 1:
-                arg = path_splited[i].split()
-                for j in range(len(arg)):
-                    command.append(eval(arg[j]))
-                command.append(True)
-                command.append('modify')
-                svg_seq.append(command)
-        print(len(svg_seq))
-        if not __debug__:
-            init_img = self.DrawSeq(svg_seq)
-            plt.figure()
-            plt.subplot(1,2,1)
-            plt.imshow(init_img, cmap='gray')
-        svg_seq = self.InitDeleteCommand(svg_seq)
-        print(len(svg_seq))
-        if not __debug__:
-            after_img = self.DrawSeq(svg_seq)
-            plt.subplot(1,2,2)
-            plt.imshow(after_img, cmap='gray')
-        self.inital_length = len(svg_seq)
-        if not __debug__:
-            plt.figure()
-            plt.subplot(1,2,1)
-            plt.imshow(self.DrawSeqOutline(svg_seq), cmap='gray')
-            plt.subplot(1,2,2)
-            plt.imshow(self.img_outline, cmap='gray')
-            plt.show()
-        for i in range(self.pop_size):
+
+        # min_loss = 1000.
+        # for delta_x in range(50, -50, -1):
+        #     svg_seq = []
+        #     for i in range(len(path_splited)):
+        #         if i%2 == 0:
+        #             command = []
+        #             command.append(path_splited[i])
+        #         elif i%2 == 1:
+        #             arg = path_splited[i].split()
+        #             for j in range(len(arg)):
+        #                 if j%2 == 0:
+        #                     command.append(eval(arg[j]) + delta_x)
+        #                 else:
+        #                     command.append(eval(arg[j]))
+        #             command.append(True)
+        #             command.append('modify')
+        #             svg_seq.append(command)
+        #     render_img = self.DrawSeq(svg_seq)
+        #     render_outline = self.DrawSeqOutline(svg_seq)
+        #     cache_loss = self.EvaluateOutline(render_img, render_outline)
+        #     if cache_loss < min_loss:
+        #         min_loss = cache_loss
+        #         final_delta_x = delta_x
+        #         init_svg_seq = copy.deepcopy(svg_seq)
+        # print(final_delta_x)
+
+        for delta_x in range(-10,10,2):
+            svg_seq = []
+            for i in range(len(path_splited)):
+                if i%2 == 0:
+                    command = []
+                    command.append(path_splited[i])
+                elif i%2 == 1:
+                    arg = path_splited[i].split()
+                    for j in range(len(arg)):
+                        if j%2 == 0:
+                            command.append(eval(arg[j]) + delta_x)
+                        else:
+                            command.append(eval(arg[j]))
+                    command.append(True)
+                    command.append('modify')
+                    svg_seq.append(command)
             svg = SVG(copy.deepcopy(svg_seq))
+            self.inital_length = len(svg_seq)
             self.population[self.cur].append(svg)
+
+        # print(len(svg_seq))
+        # if not __debug__:
+        #     init_img = self.DrawSeq(svg_seq)
+        #     plt.figure()
+        #     plt.subplot(1,2,1)
+        #     plt.imshow(init_img, cmap='gray')
+        # svg_seq = self.InitDeleteCommand(svg_seq)
+        # print(len(svg_seq))
+        # if not __debug__:
+        #     plt.subplot(1,2,2)
+        #     after_img = self.DrawSeq(svg_seq)
+        #     plt.imshow(after_img, cmap='gray')
+        #     plt.show()
+        # self.inital_length = len(svg_seq1)
+        # if not __debug__:
+        #     plt.figure()
+        #     plt.subplot(1,2,1)
+        #     plt.imshow(self.DrawSeqOutline(svg_seq1), cmap='gray')
+        #     plt.subplot(1,2,2)
+        #     plt.imshow(self.img_outline, cmap='gray')
+        #     plt.show()
+        # if not __debug__:
+        #     plt.figure()
+        #     plt.subplot(1,2,1)
+        #     plt.imshow(self.DrawSeqOutline(svg_seq2), cmap='gray')
+        #     plt.subplot(1,2,2)
+        #     plt.imshow(self.img_outline, cmap='gray')
+        #     plt.show()
+
+        # for i in range(self.pop_size):
+        #     svg = SVG(copy.deepcopy(svg_seq))
+        #     self.population[self.cur].append(svg)
         self.population[1 - self.cur] = [None for i in range(self.pop_size)]
 
     def Draw(self, svg):
@@ -360,10 +405,10 @@ class Editer:
 
     def DeleteCommand(self, svg_seq):
         return_svg_seq = copy.deepcopy(svg_seq)
-        for i in range(2, len(return_svg_seq)):
+        for i in range(1, len(return_svg_seq)):
             tmp_seq = copy.deepcopy(return_svg_seq)
             delete_command = tmp_seq[i]
-            if delete_command[-2] == 'del_true' or delete_command[-2] == 'del_false':
+            if delete_command[-2] == 'del_true' or delete_command[-2] == 'del_false' or delete_command[0] == 'M':
                 continue
             index = i - 1
             last_command = tmp_seq[index]
@@ -376,12 +421,8 @@ class Editer:
                 delete_command[-2] = 'del_true'
             elif delete_command[-2] == False:
                 delete_command[-2] = 'del_false'
-            if last_command[0] == 'L':
-                last_command[1] = curX
-                last_command[2] = curY
-            elif last_command[0] == 'C':
-                last_command[-4] = curX
-                last_command[-3] = curY
+            last_command[-4] = curX
+            last_command[-3] = curY
             cur_render_img = self.DrawSeq(return_svg_seq)
             cur_render_outlines = self.DrawSeqOutline(return_svg_seq)
             current_loss = self.Evaluate(cur_render_img, cur_render_outlines)
@@ -454,7 +495,7 @@ class Editer:
         self.InitPopulation()
         p_best, p_worst = self.EvaluatePopulation()
         txi = xi
-        target_outlines_dir = f'target_svg_outlines/{opts.font_class}'
+        target_outlines_dir = f'target_svg_outlines/149_2'
         for g in range(generations):
             clear_output(wait=True)
             print("Generation ", g+1, "/", generations)
@@ -472,9 +513,24 @@ class Editer:
             if g == 380:
                 self.ModifyAll()
 
+            if not __debug__:
+                if g % 20 == 0:
+                    tmp_img = self.DrawOutline(self.population[self.cur][p_best])
+                    plt.figure()
+                    plt.imshow(tmp_img, cmap='gray')
+                    plt.show()
+
             # if g == 100:
             #     save_svg_outlines(self.population[self.cur][p_best], target_outlines_dir, opts.char_class)
 
+            # if g < 20:
+            #     txi *= decay
+            #     for i in range(self.pop_size):
+            #         p1 = random.randint(0, self.pop_size - 1)
+            #         p2 = random.randint(0, self.pop_size - 1)
+            #         self.population[1 - self.cur][i] = copy.deepcopy(self.population[self.cur][p1])
+            #         if random.random() < prob_crs:
+            #             self.population[1 - self.cur][i] = self.CrossOver(self.population[self.cur][p1],self.population[self.cur][p2])
             if g < 100 or (g > 210 and g < 250) or (g > 350 and g < 400):
                 txi *= decay
                 for i in range(self.pop_size):
@@ -500,14 +556,17 @@ class Editer:
                         plt.subplot(1,2,2)
                         plt.imshow(tmp_img, cmap='gray')
                         plt.show()
-                if g == 80 or g == 200 or g == 350 or g == 380:
+                if g == 80 or g == 220 or g == 380:
                     self.population[1 - self.cur][i].svg_seq = copy.deepcopy(self.DeleteCommand(self.population[1 - self.cur][i].svg_seq))
                 self.MutatePos(self.population[1 - self.cur][i],moving_dis, self.seed + time.time() + g)
 
             self.cur = 1 - self.cur
             c_best, c_worst = self.EvaluatePopulation()
 
-            if g < 100 or (g > 210 and g < 250) or (g > 350 and g < 400):
+            if g == 80 or g == 220 or g == 380:
+                p_best = c_best
+                p_worst = c_worst
+            elif g < 100 or (g > 220 and g < 250) or (g > 350 and g < 400):
                 if self.population[1 - self.cur][p_best].loss < self.population[self.cur][c_best].loss:
                     self.population[self.cur][c_worst] = copy.deepcopy(self.population[1 - self.cur][p_best])
                     p_best = c_worst
@@ -522,16 +581,23 @@ class Editer:
                 p_best = c_best
                 p_worst = c_worst
 
-            # if self.population[self.cur][p_best].loss < 2.4:
-            #     break
-
-        final_svg =  self.population[self.cur][p_best]
+        redundant_svg =  self.population[self.cur][p_best]
+        final_svg = delete_svg(redundant_svg)
         repair_svg(final_svg)
         final_img = self.Draw(final_svg)
         diff1 = cv2.subtract(self.img_grey, final_img) #values are too low
         diff2 = cv2.subtract(final_img,self.img_grey) #values are too high
         totalDiff = cv2.add(diff1, diff2)
         return final_svg, final_img, totalDiff
+
+def delete_svg(redundant_svg):
+    svg_seq = redundant_svg.svg_seq
+    final_svg_seq = []
+    for command in svg_seq:
+        if command[-2] != 'del_true' and command[-2] != 'del_false':
+            final_svg_seq.append(command)
+    final_svg = SVG(copy.deepcopy(final_svg_seq))
+    return final_svg
 
 def repair_svg(svg):
     svg_seq = svg.svg_seq
@@ -556,10 +622,9 @@ def save_svg(svg, target_dir, name):
     svg_seq = svg.svg_seq
     svg_str = ''
     for i in range(len(svg_seq)):
-        if svg_seq[i][-2] != 'del_true' and svg_seq[i][-2] != 'del_false':
-            for j in svg_seq[i][:-2]:
-                svg_str += str(j)
-                svg_str += ' '
+        for j in svg_seq[i][:-2]:
+            svg_str += str(j)
+            svg_str += ' '
     svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
     svg_data += '<path d="%s" stroke-width="1.0" fill="rgb(0, 0, 0)" opacity="1.0"/></g></svg>'%svg_str
     svg_outfile = os.path.join(target_dir, f"{name}.svg")
@@ -573,10 +638,9 @@ def save_svg_outlines(svg, target_outlines_dir, name):
     svg_seq = svg.svg_seq
     svg_str = ''
     for i in range(len(svg_seq)):
-        if svg_seq[i][-2] != 'del_true' and svg_seq[i][-2] != 'del_false':
-            for j in svg_seq[i][:-2]:
-                svg_str += str(j)
-                svg_str += ' '
+        for j in svg_seq[i][:-2]:
+            svg_str += str(j)
+            svg_str += ' '
     svg_data = '<?xml version="1.0" ?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256"><defs/><g>'
     svg_data += '<path d="%s" fill="none" stroke="black" stroke-width="2.0"/></g></svg>'%svg_str
     svg_outfile = os.path.join(target_outlines_dir, f"{name}.svg")
@@ -590,9 +654,9 @@ def main():
     parser.add_argument('--font_class', type=str, default='149')
     opts = parser.parse_args()
     print(opts.char_class)
-    editer = Editer(f'target_image/{opts.font_class}/{opts.char_class}.png',f'source_svg/{opts.font_class}/{opts.char_class}.svg', 10, seed=time.time())
-    target_dir = f'target_svg/{opts.font_class}'
-    target_outlines_dir = f'target_svg_outlines/{opts.font_class}'
+    editer = Editer(f'target_image/149_2/{opts.char_class}.png',f'source_svg/{opts.font_class}/{opts.char_class}.svg', 10, seed=time.time())
+    target_dir = f'target_svg/149_2'
+    target_outlines_dir = f'target_svg_outlines/149_2'
     svg, img, totalDiff= editer.Edit(400, 20, 0.9, 0.8, opts)
     if not __debug__:
         plt.figure()

@@ -146,10 +146,10 @@ class Editer:
 
     def DeleteCommand(self, svg_seq):
         return_svg_seq = copy.deepcopy(svg_seq)
-        for i in range(2, len(return_svg_seq)):
+        for i in range(1, len(return_svg_seq)):
             tmp_seq = copy.deepcopy(return_svg_seq)
             delete_command = tmp_seq[i]
-            if delete_command[-2] == 'del_true' or delete_command[-2] == 'del_false':
+            if delete_command[-2] == 'del_true' or delete_command[-2] == 'del_false' or delete_command[0] == 'M':
                 continue
             index = i - 1
             last_command = tmp_seq[index]
@@ -162,12 +162,8 @@ class Editer:
                 delete_command[-2] = 'del_true'
             elif delete_command[-2] == False:
                 delete_command[-2] = 'del_false'
-            if last_command[0] == 'L':
-                last_command[1] = curX
-                last_command[2] = curY
-            elif last_command[0] == 'C':
-                last_command[-4] = curX
-                last_command[-3] = curY
+            last_command[-4] = curX
+            last_command[-3] = curY
             cur_render_img = self.DrawSeq(return_svg_seq)
             cur_render_outlines = self.DrawSeqOutline(return_svg_seq)
             current_loss = self.Evaluate(cur_render_img, cur_render_outlines)
@@ -192,7 +188,7 @@ class Editer:
                 length += 1
         print(length)
         target_dir = 'target_svg_outlines'
-        save_svg_outlines(del_seq, target_dir, 'Q')
+        save_svg_outlines(del_seq, target_dir, 'D')
 
 
 def repair_svg(svg):
@@ -229,7 +225,7 @@ def save_svg_outlines(svg_seq, target_outlines_dir, name):
     svg_f.close()
 
 def main():
-    editer = Editer(f'target_image/149/Q.png',f'target_svg_outlines/149/Q.svg', 10, seed=time.time())
+    editer = Editer(f'target_image/149_2/D.png',f'target_svg_outlines/149_2/D.svg', 10, seed=time.time())
     editer.test_delete()
 
 if __name__ == '__main__':
