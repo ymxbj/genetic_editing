@@ -59,88 +59,97 @@ class Editer:
         path = path_.split('" stroke')[0]
         path_splited = re.split(r"([MLC])", path)
         path_splited = path_splited[1:]
-        svg_seq1 = []
-        svg_seq2 = []
-        command = []
 
-        # min_loss = 1000.
-        # for delta_x in range(50, -50, -1):
-        #     svg_seq = []
-        #     for i in range(len(path_splited)):
-        #         if i%2 == 0:
-        #             command = []
-        #             command.append(path_splited[i])
-        #         elif i%2 == 1:
-        #             arg = path_splited[i].split()
-        #             for j in range(len(arg)):
-        #                 if j%2 == 0:
-        #                     command.append(eval(arg[j]) + delta_x)
-        #                 else:
-        #                     command.append(eval(arg[j]))
-        #             command.append(True)
-        #             command.append('modify')
-        #             svg_seq.append(command)
-        #     render_img = self.DrawSeq(svg_seq)
-        #     render_outline = self.DrawSeqOutline(svg_seq)
-        #     cache_loss = self.EvaluateOutline(render_img, render_outline)
-        #     if cache_loss < min_loss:
-        #         min_loss = cache_loss
-        #         final_delta_x = delta_x
-        #         init_svg_seq = copy.deepcopy(svg_seq)
-        # print(final_delta_x)
+        init_svg_seq = []
+        for i in range(len(path_splited)):
+            if i%2 == 0:
+                command = []
+                command.append(path_splited[i])
+            elif i%2 == 1:
+                arg = path_splited[i].split()
+                for j in range(len(arg)):
+                    command.append(eval(arg[j]))
+                command.append(True)
+                command.append('modify')
+                init_svg_seq.append(command)
 
-        for delta_x in range(-10,10,2):
-            svg_seq = []
-            for i in range(len(path_splited)):
-                if i%2 == 0:
-                    command = []
-                    command.append(path_splited[i])
-                elif i%2 == 1:
-                    arg = path_splited[i].split()
-                    for j in range(len(arg)):
-                        if j%2 == 0:
-                            command.append(eval(arg[j]) + delta_x)
-                        else:
-                            command.append(eval(arg[j]))
-                    command.append(True)
-                    command.append('modify')
-                    svg_seq.append(command)
+        print(len(init_svg_seq))
+        if not __debug__:
+            init_img = self.DrawSeq(init_svg_seq)
+            plt.figure()
+            plt.subplot(1,2,1)
+            plt.imshow(init_img, cmap='gray')
+        init_svg_seq = self.InitDeleteCommand(init_svg_seq)
+        print(len(init_svg_seq))
+        if not __debug__:
+            plt.subplot(1,2,2)
+            after_img = self.DrawSeq(init_svg_seq)
+            plt.imshow(after_img, cmap='gray')
+            plt.show()
+        self.inital_length = len(init_svg_seq)
+        if not __debug__:
+            plt.figure()
+            plt.subplot(1,2,1)
+            plt.imshow(self.DrawSeqOutline(init_svg_seq), cmap='gray')
+            plt.subplot(1,2,2)
+            plt.imshow(self.img_outline, cmap='gray')
+            plt.show()
+
+        for delta_x in range(-10, 10, 2):
+            svg_seq = copy.deepcopy(init_svg_seq)
+            for command in svg_seq:
+                if command[0] == 'M' or command[0] == 'L':
+                    command[1] += delta_x
+                elif command[0] == 'C':
+                    command[1] += delta_x
+                    command[3] += delta_x
+                    command[5] += delta_x
             svg = SVG(copy.deepcopy(svg_seq))
-            self.inital_length = len(svg_seq)
             self.population[self.cur].append(svg)
 
-        # print(len(svg_seq))
-        # if not __debug__:
-        #     init_img = self.DrawSeq(svg_seq)
-        #     plt.figure()
-        #     plt.subplot(1,2,1)
-        #     plt.imshow(init_img, cmap='gray')
-        # svg_seq = self.InitDeleteCommand(svg_seq)
-        # print(len(svg_seq))
-        # if not __debug__:
-        #     plt.subplot(1,2,2)
-        #     after_img = self.DrawSeq(svg_seq)
-        #     plt.imshow(after_img, cmap='gray')
-        #     plt.show()
-        # self.inital_length = len(svg_seq1)
-        # if not __debug__:
-        #     plt.figure()
-        #     plt.subplot(1,2,1)
-        #     plt.imshow(self.DrawSeqOutline(svg_seq1), cmap='gray')
-        #     plt.subplot(1,2,2)
-        #     plt.imshow(self.img_outline, cmap='gray')
-        #     plt.show()
-        # if not __debug__:
-        #     plt.figure()
-        #     plt.subplot(1,2,1)
-        #     plt.imshow(self.DrawSeqOutline(svg_seq2), cmap='gray')
-        #     plt.subplot(1,2,2)
-        #     plt.imshow(self.img_outline, cmap='gray')
-        #     plt.show()
-
-        # for i in range(self.pop_size):
-        #     svg = SVG(copy.deepcopy(svg_seq))
+        # 对于H的草化，需要用到如下代码：
+        # svg_seq1 = []
+        # svg_seq2 = []
+        # delta_x = 10
+        # for i in range(len(path_splited)):
+        #     if i%2 == 0:
+        #         command = []
+        #         command.append(path_splited[i])
+        #     elif i%2 == 1:
+        #         arg = path_splited[i].split()
+        #         for j in range(len(arg)):
+        #             if j%2 == 0:
+        #                 command.append(eval(arg[j]) + delta_x)
+        #             else:
+        #                 command.append(eval(arg[j]))
+        #         command.append(True)
+        #         command.append('modify')
+        #         svg_seq1.append(command)
+        # for i in range(self.pop_size//2):
+        #     svg = SVG(copy.deepcopy(svg_seq1))
         #     self.population[self.cur].append(svg)
+
+        # delta_x = -10
+        # for i in range(len(path_splited)):
+        #     if i%2 == 0:
+        #         command = []
+        #         command.append(path_splited[i])
+        #     elif i%2 == 1:
+        #         arg = path_splited[i].split()
+        #         for j in range(len(arg)):
+        #             if j%2 == 0:
+        #                 command.append(eval(arg[j]) + delta_x)
+        #             else:
+        #                 command.append(eval(arg[j]))
+        #         command.append(True)
+        #         command.append('modify')
+        #         svg_seq2.append(command)
+        # for i in range(self.pop_size//2):
+        #     svg = SVG(copy.deepcopy(svg_seq2))
+        #     self.population[self.cur].append(svg)
+
+        # self.inital_length = len(svg_seq1)
+
         self.population[1 - self.cur] = [None for i in range(self.pop_size)]
 
     def Draw(self, svg):
@@ -429,7 +438,7 @@ class Editer:
             del_render_img = self.DrawSeq(tmp_seq)
             del_render_outlines = self.DrawSeqOutline(tmp_seq)
             delete_loss = self.Evaluate(del_render_img, del_render_outlines)
-            if delete_loss  <= current_loss + 0.25:
+            if delete_loss  <= current_loss + 0.15:
                 return_svg_seq = copy.deepcopy(tmp_seq)
         return return_svg_seq
 
@@ -514,7 +523,7 @@ class Editer:
                 self.ModifyAll()
 
             if not __debug__:
-                if g % 20 == 0:
+                if g % 50 == 0:
                     tmp_img = self.DrawOutline(self.population[self.cur][p_best])
                     plt.figure()
                     plt.imshow(tmp_img, cmap='gray')
@@ -523,15 +532,7 @@ class Editer:
             # if g == 100:
             #     save_svg_outlines(self.population[self.cur][p_best], target_outlines_dir, opts.char_class)
 
-            # if g < 20:
-            #     txi *= decay
-            #     for i in range(self.pop_size):
-            #         p1 = random.randint(0, self.pop_size - 1)
-            #         p2 = random.randint(0, self.pop_size - 1)
-            #         self.population[1 - self.cur][i] = copy.deepcopy(self.population[self.cur][p1])
-            #         if random.random() < prob_crs:
-            #             self.population[1 - self.cur][i] = self.CrossOver(self.population[self.cur][p1],self.population[self.cur][p2])
-            if g < 100 or (g > 210 and g < 250) or (g > 350 and g < 400):
+            if g < 100 or (g > 210 and g < 250) or (g > 350 and g < generations):
                 txi *= decay
                 for i in range(self.pop_size):
                     p1 = self.Upper_bound(self.pp, random.random())
@@ -566,7 +567,7 @@ class Editer:
             if g == 80 or g == 220 or g == 380:
                 p_best = c_best
                 p_worst = c_worst
-            elif g < 100 or (g > 220 and g < 250) or (g > 350 and g < 400):
+            elif g < 100 or (g > 210 and g < 250) or (g > 350 and g < generations):
                 if self.population[1 - self.cur][p_best].loss < self.population[self.cur][c_best].loss:
                     self.population[self.cur][c_worst] = copy.deepcopy(self.population[1 - self.cur][p_best])
                     p_best = c_worst
