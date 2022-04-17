@@ -17,10 +17,35 @@ def showImage(img):
     plt.imshow(img, cmap="gray")
     plt.show()
 
+class FloutRange:
+    def __init__(self,start, end, step):
+        self.start = start
+        self.end = end
+        self.step = step
+        self.val = start
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.val > self.end:
+            raise StopIteration
+        val = self.val
+        self.val += self.step
+        return val
+
 class SVG:
     def __init__(self,svg_seq):
         self.svg_seq = svg_seq
         self.loss = None
+
+def get_img_bbox(img):
+    img = 255 - np.array(img)
+    img0 = np.sum(img, axis = 0)
+    img1 = np.sum(img, axis = 1)
+    y_range = np.where(img1>127.5)[0]
+    x_range = np.where(img0>127.5)[0]
+    return [x_range[0],x_range[-1]], [y_range[0],y_range[-1]]
 
 def util_sample_from_img(img):
     #possible positions to sample
@@ -42,6 +67,7 @@ class Editer:
         mag = 255 - mag
         self.img_outline = mag.astype(np.uint8)
         self.svg_path = svg_path
+        self.svg_seq = None
         self.cached_image = None
         self.cached_error = None
         self.sample_mask = None
@@ -53,14 +79,14 @@ class Editer:
         self.seed = seed
         self.inital_length = None
 
-    def InitPopulation(self):
+    def InitSeq(self):
         fin = open(self.svg_path,'r')
         path_ = fin.read().split('d="')[1]
         path = path_.split('" stroke')[0]
         path_splited = re.split(r"([MLC])", path)
         path_splited = path_splited[1:]
 
-        init_svg_seq = []
+        svg_seq = []
         for i in range(len(path_splited)):
             if i%2 == 0:
                 command = []
@@ -69,86 +95,99 @@ class Editer:
                 arg = path_splited[i].split()
                 for j in range(len(arg)):
                     command.append(eval(arg[j]))
-                command.append(True)
-                command.append('modify')
-                init_svg_seq.append(command)
+                svg_seq.append(command)
 
-        print(len(init_svg_seq))
+        self.svg_seq = svg_seq
+
+    def Affine_transform(self, matrix):
+        affined_svg_seq = []
+        for command in self.svg_seq:
+            if command[0] == 'M' or command[0] == 'L':
+                source_coord = np.array([[command[1]],[command[2]],[1]])
+            elif command[0] == 'C':
+                source_coord = np.array([[command[1],command[3],command[5]],[command[2],command[4],command[6]],[1,1,1]])
+            affined_coord = np.dot(matrix, source_coord)
+            affined_command = []
+            affined_command.append(command[0])
+            if command[0] == 'M' or command[0] == 'L':
+                affined_command.append(affined_coord[0][0])
+                affined_command.append(affined_coord[1][0])
+            elif command[0] == 'C':
+                affined_command.append(affined_coord[0][0])
+                affined_command.append(affined_coord[1][0])
+                affined_command.append(affined_coord[0][1])
+                affined_command.append(affined_coord[1][1])
+                affined_command.append(affined_coord[0][2])
+                affined_command.append(affined_coord[1][2])
+            affined_command.append(True)
+            affined_command.append('modify')
+            affined_svg_seq.append(affined_command)
+        return affined_svg_seq
+
+    def Find_best_position(self):
+        best_svg_seq = None
+        min_loss = 1000
+        target_bbox = get_img_bbox(self.img_grey)
+        target_center_x = (target_bbox[0][0]+target_bbox[0][1])/2
+        target_center_y = (target_bbox[1][0]+target_bbox[1][1])/2
+        for scale_x in FloutRange(0.1,1,0.1):
+            for scale_y in FloutRange(0.1,1,0.1):
+                for shear_x in FloutRange(-0.5,0,0.05):
+                    matrix = np.array([[scale_x, shear_x, 50],[0,scale_y, 50],[0,0,1]])
+                    affined_svg_seq = self.Affine_transform(matrix)
+                    affined_img = self.DrawSeq(affined_svg_seq)
+                    # showImage(affined_img)
+                    affined_bbox = get_img_bbox(affined_img)
+                    affined_center_x = (affined_bbox[0][0]+affined_bbox[0][1])/2
+                    affined_center_y = (affined_bbox[1][0]+affined_bbox[1][1])/2
+                    delta_x = target_center_x - affined_center_x
+                    delta_y = target_center_y - affined_center_y
+                    for command in affined_svg_seq:
+                        if command[0] == 'M' or command[0] == 'L':
+                            command[1] += delta_x
+                            command[2] += delta_y
+                        elif command[0] == 'C':
+                            command[1] += delta_x
+                            command[2] += delta_y
+                            command[3] += delta_x
+                            command[4] += delta_y
+                            command[5] += delta_x
+                            command[6] += delta_y
+                    final_img = self.DrawSeq(affined_svg_seq)
+                    current_loss = self.EvaluateImg(final_img)
+                    if current_loss <= min_loss:
+                        min_loss = current_loss
+                        best_svg_seq = copy.deepcopy(affined_svg_seq)
+        return best_svg_seq
+
+    def InitPopulation(self):
+        self.InitSeq()
+        svg_seq = self.Find_best_position()
+        print(len(svg_seq))
         if not __debug__:
-            init_img = self.DrawSeq(init_svg_seq)
+            init_img = self.DrawSeq(svg_seq)
             plt.figure()
             plt.subplot(1,2,1)
             plt.imshow(init_img, cmap='gray')
-        init_svg_seq = self.InitDeleteCommand(init_svg_seq)
-        print(len(init_svg_seq))
+        svg_seq = self.InitDeleteCommand(svg_seq)
+        print(len(svg_seq))
         if not __debug__:
             plt.subplot(1,2,2)
-            after_img = self.DrawSeq(init_svg_seq)
+            after_img = self.DrawSeq(svg_seq)
             plt.imshow(after_img, cmap='gray')
             plt.show()
-        self.inital_length = len(init_svg_seq)
+        self.inital_length = len(svg_seq)
         if not __debug__:
             plt.figure()
             plt.subplot(1,2,1)
-            plt.imshow(self.DrawSeqOutline(init_svg_seq), cmap='gray')
+            plt.imshow(self.DrawSeqOutline(svg_seq), cmap='gray')
             plt.subplot(1,2,2)
             plt.imshow(self.img_outline, cmap='gray')
             plt.show()
 
-        for delta_x in range(-10, 10, 2):
-            svg_seq = copy.deepcopy(init_svg_seq)
-            for command in svg_seq:
-                if command[0] == 'M' or command[0] == 'L':
-                    command[1] += delta_x
-                elif command[0] == 'C':
-                    command[1] += delta_x
-                    command[3] += delta_x
-                    command[5] += delta_x
+        for i in range(self.pop_size):
             svg = SVG(copy.deepcopy(svg_seq))
             self.population[self.cur].append(svg)
-
-        # 对于H的草化，需要用到如下代码：
-        # svg_seq1 = []
-        # svg_seq2 = []
-        # delta_x = 10
-        # for i in range(len(path_splited)):
-        #     if i%2 == 0:
-        #         command = []
-        #         command.append(path_splited[i])
-        #     elif i%2 == 1:
-        #         arg = path_splited[i].split()
-        #         for j in range(len(arg)):
-        #             if j%2 == 0:
-        #                 command.append(eval(arg[j]) + delta_x)
-        #             else:
-        #                 command.append(eval(arg[j]))
-        #         command.append(True)
-        #         command.append('modify')
-        #         svg_seq1.append(command)
-        # for i in range(self.pop_size//2):
-        #     svg = SVG(copy.deepcopy(svg_seq1))
-        #     self.population[self.cur].append(svg)
-
-        # delta_x = -10
-        # for i in range(len(path_splited)):
-        #     if i%2 == 0:
-        #         command = []
-        #         command.append(path_splited[i])
-        #     elif i%2 == 1:
-        #         arg = path_splited[i].split()
-        #         for j in range(len(arg)):
-        #             if j%2 == 0:
-        #                 command.append(eval(arg[j]) + delta_x)
-        #             else:
-        #                 command.append(eval(arg[j]))
-        #         command.append(True)
-        #         command.append('modify')
-        #         svg_seq2.append(command)
-        # for i in range(self.pop_size//2):
-        #     svg = SVG(copy.deepcopy(svg_seq2))
-        #     self.population[self.cur].append(svg)
-
-        # self.inital_length = len(svg_seq1)
 
         self.population[1 - self.cur] = [None for i in range(self.pop_size)]
 
@@ -217,6 +256,15 @@ class Editer:
         render_outline = render_outline[:,:,-1]
         render_outline = cv2.bitwise_not(render_outline)
         return render_outline
+
+    def EvaluateImg(self, render_img):
+        diff_img_1 = cv2.subtract(self.img_grey, render_img) #values are too low
+        diff_img_2 = cv2.subtract(render_img,self.img_grey) #values are too high
+        totalDiff_img = cv2.add(diff_img_1, diff_img_2)
+        totalDiff_img = np.sum(totalDiff_img)
+        totalDiff_img = totalDiff_img / (self.height * self.width)
+
+        return totalDiff_img
 
     def Evaluate(self, render_img, render_outline):
         diff_img_1 = cv2.subtract(self.img_grey, render_img) #values are too low
@@ -522,15 +570,10 @@ class Editer:
             if g == 380:
                 self.ModifyAll()
 
-            if not __debug__:
-                if g % 50 == 0:
-                    tmp_img = self.DrawOutline(self.population[self.cur][p_best])
-                    plt.figure()
-                    plt.imshow(tmp_img, cmap='gray')
-                    plt.show()
-
-            # if g == 100:
-            #     save_svg_outlines(self.population[self.cur][p_best], target_outlines_dir, opts.char_class)
+            # if not __debug__:
+            #     if g % 50 == 0:
+            #         tmp_img = self.DrawOutline(self.population[self.cur][p_best])
+            #         showImage(tmp_img)
 
             if g < 100 or (g > 210 and g < 250) or (g > 350 and g < generations):
                 txi *= decay
