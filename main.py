@@ -13,11 +13,11 @@ import os
 from IPython.display import clear_output
 
 def showImage(img):
-    plt.figure(figsize=(10,10))
+    plt.figure()
     plt.imshow(img, cmap="gray")
     plt.show()
 
-class FloutRange:
+class FloatRange:
     def __init__(self,start, end, step):
         self.start = start
         self.end = end
@@ -124,17 +124,67 @@ class Editer:
             affined_svg_seq.append(affined_command)
         return affined_svg_seq
 
+    def move_to_canvas(self, affined_svg_seq):
+        min_x = 1000
+        max_x = -1000
+        min_y = 1000
+        max_y = -1000
+        for command in affined_svg_seq:
+            if command[0] == 'M' or command[0] == 'L':
+                min_x = min(min_x, command[1])
+                max_x = max(max_x, command[1])
+                min_y = min(min_y, command[2])
+                max_y = max(max_y, command[2])
+            elif command[0] == 'C':
+                min_x = min(min_x, command[1])
+                max_x = max(max_x, command[1])
+                min_y = min(min_y, command[2])
+                max_y = max(max_y, command[2])
+                min_x = min(min_x, command[3])
+                max_x = max(max_x, command[3])
+                min_y = min(min_y, command[4])
+                max_y = max(max_y, command[4])
+                min_x = min(min_x, command[5])
+                max_x = max(max_x, command[5])
+                min_y = min(min_y, command[6])
+                max_y = max(max_y, command[6])
+
+        if (max_x - min_x >= self.width) or (max_y - min_y >= self.height):
+            return False
+        else:
+            center_x = (max_x + min_x)/2
+            center_y = (max_y + min_y)/2
+            delta_x = 128 - center_x
+            delta_y = 128 - center_y
+
+        for command in affined_svg_seq:
+            if command[0] == 'M' or command[0] == 'L':
+                command[1] += delta_x
+                command[2] += delta_y
+            elif command[0] == 'C':
+                command[1] += delta_x
+                command[2] += delta_y
+                command[3] += delta_x
+                command[4] += delta_y
+                command[5] += delta_x
+                command[6] += delta_y
+
+        return True
+
     def Find_best_position(self):
         best_svg_seq = None
         min_loss = 1000
         target_bbox = get_img_bbox(self.img_grey)
         target_center_x = (target_bbox[0][0]+target_bbox[0][1])/2
         target_center_y = (target_bbox[1][0]+target_bbox[1][1])/2
-        for scale_x in FloutRange(0.1,1,0.1):
-            for scale_y in FloutRange(0.1,1,0.1):
-                for shear_x in FloutRange(-0.5,0,0.05):
-                    matrix = np.array([[scale_x, shear_x, 50],[0,scale_y, 50],[0,0,1]])
+        for scale_x in FloatRange(0.1,2,0.1):
+            for scale_y in FloatRange(0.1,2,0.1):
+                for shear_x in FloatRange(-0.5,0.5,0.1):
+                    matrix = np.array([[scale_x, shear_x, 0],[0,scale_y, 0],[0,0,1]])
                     affined_svg_seq = self.Affine_transform(matrix)
+                    can_move = self.move_to_canvas(affined_svg_seq)
+                    if can_move == False:
+                        continue
                     affined_img = self.DrawSeq(affined_svg_seq)
                     # showImage(affined_img)
                     affined_bbox = get_img_bbox(affined_img)
@@ -698,9 +748,9 @@ def main():
     parser.add_argument('--font_class', type=str, default='149')
     opts = parser.parse_args()
     print(opts.char_class)
-    editer = Editer(f'target_image/149_2/{opts.char_class}.png',f'source_svg/{opts.font_class}/{opts.char_class}.svg', 10, seed=time.time())
-    target_dir = f'target_svg/149_2'
-    target_outlines_dir = f'target_svg_outlines/149_2'
+    editer = Editer(f'target_image/196_1/{opts.char_class}.png',f'source_svg/{opts.font_class}/{opts.char_class}.svg', 10, seed=time.time())
+    target_dir = f'target_svg/196_1'
+    target_outlines_dir = f'target_svg_outlines/196_1'
     svg, img, totalDiff= editer.Edit(400, 20, 0.9, 0.8, opts)
     if not __debug__:
         plt.figure()

@@ -4,5 +4,5 @@
 # 其中char_class后的字符为要编辑的字母。
 for char in {A..Z}
 do
-    python3 main.py --char_class $char --font_class 179
+    python3 main.py --char_class $char --font_class 196
 done
