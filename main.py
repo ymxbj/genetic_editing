@@ -3,6 +3,8 @@ import numpy as np
 from io import BytesIO
 from PIL import Image
 from cairosvg import svg2png
+import torch
+from vgg_cx import VGG19_CX, CXLoss, get_loader
 import time
 import matplotlib.pyplot as plt
 import copy
@@ -12,9 +14,24 @@ import re
 import os
 from IPython.display import clear_output
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+criterion_cx = CXLoss(sigma=0.5).to(device)
+vgg19 = VGG19_CX().to(device)
+vgg19.load_model('vgg19-dcbb9e9d.pth')
+vgg19.eval()
+vgg_layers = ['conv3_3', 'conv4_2']
+
 def showImage(img):
     plt.figure()
     plt.imshow(img, cmap="gray")
+    plt.show()
+
+def showTwoImages(img1,img2):
+    plt.figure()
+    plt.subplot(1,2,1)
+    plt.imshow(img1, cmap='gray')
+    plt.subplot(1,2,2)
+    plt.imshow(img2, cmap='gray')
     plt.show()
 
 class FloatRange:
@@ -43,8 +60,8 @@ def get_img_bbox(img):
     img = 255 - np.array(img)
     img0 = np.sum(img, axis = 0)
     img1 = np.sum(img, axis = 1)
-    y_range = np.where(img1>127.5)[0]
-    x_range = np.where(img0>127.5)[0]
+    y_range = np.where(img1 > 1000)[0]
+    x_range = np.where(img0 > 1000)[0]
     return [x_range[0],x_range[-1]], [y_range[0],y_range[-1]]
 
 def util_sample_from_img(img):
@@ -60,6 +77,7 @@ def util_sample_from_img(img):
 class Editer:
     def __init__(self,img_path,svg_path, pop_size, seed = 0):
         self.img_grey = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        self.target_feature = vgg19(next(iter(get_loader(1, self.img_grey))).to(device))
         gx = cv2.Sobel(self.img_grey, cv2.CV_32F, 1, 0, ksize=1)
         gy = cv2.Sobel(self.img_grey, cv2.CV_32F, 0, 1, ksize=1)
         mag, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
@@ -179,14 +197,16 @@ class Editer:
         target_center_y = (target_bbox[1][0]+target_bbox[1][1])/2
         for scale_x in FloatRange(0.1,2,0.1):
             for scale_y in FloatRange(0.1,2,0.1):
-                for shear_x in FloatRange(-0.5,0.5,0.1):
+                for shear_x in FloatRange(-0.2,0.2,0.05):
+                    # scale_x = 1
+                    # scale_y = 1
+                    # shear_x = 0.2
                     matrix = np.array([[scale_x, shear_x, 0],[0,scale_y, 0],[0,0,1]])
                     affined_svg_seq = self.Affine_transform(matrix)
                     can_move = self.move_to_canvas(affined_svg_seq)
                     if can_move == False:
                         continue
                     affined_img = self.DrawSeq(affined_svg_seq)
-                    # showImage(affined_img)
                     affined_bbox = get_img_bbox(affined_img)
                     affined_center_x = (affined_bbox[0][0]+affined_bbox[0][1])/2
                     affined_center_y = (affined_bbox[1][0]+affined_bbox[1][1])/2
@@ -204,7 +224,9 @@ class Editer:
                             command[5] += delta_x
                             command[6] += delta_y
                     final_img = self.DrawSeq(affined_svg_seq)
-                    current_loss = self.EvaluateImg(final_img)
+                    current_loss = self.CXloss(final_img)
+                    print(current_loss)
+                    showTwoImages(final_img, self.img_grey)
                     if current_loss <= min_loss:
                         min_loss = current_loss
                         best_svg_seq = copy.deepcopy(affined_svg_seq)
@@ -307,14 +329,23 @@ class Editer:
         render_outline = cv2.bitwise_not(render_outline)
         return render_outline
 
-    def EvaluateImg(self, render_img):
-        diff_img_1 = cv2.subtract(self.img_grey, render_img) #values are too low
-        diff_img_2 = cv2.subtract(render_img,self.img_grey) #values are too high
-        totalDiff_img = cv2.add(diff_img_1, diff_img_2)
-        totalDiff_img = np.sum(totalDiff_img)
-        totalDiff_img = totalDiff_img / (self.height * self.width)
+    # def EvaluateImg(self, render_img):
+    #     diff_img_1 = cv2.subtract(self.img_grey, render_img) #values are too low
+    #     diff_img_2 = cv2.subtract(render_img,self.img_grey) #values are too high
+    #     totalDiff_img = cv2.add(diff_img_1, diff_img_2)
+    #     totalDiff_img = np.sum(totalDiff_img)
+    #     totalDiff_img = totalDiff_img / (self.height * self.width)
 
-        return totalDiff_img
+    #     return totalDiff_img
+    def CXloss(self, render_img):
+        loss_CX = torch.zeros(1).to(device)
+        with torch.no_grad():
+            image_feature = vgg19(next(iter(get_loader(1, render_img))).to(device))
+            for l in vgg_layers:
+                cx = criterion_cx(image_feature[l], self.target_feature[l])
+                loss_CX += cx
+        return loss_CX.item()
+
 
     def Evaluate(self, render_img, render_outline):
         diff_img_1 = cv2.subtract(self.img_grey, render_img) #values are too low
