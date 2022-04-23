@@ -3,7 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset,DataLoader
 from torchvision import transforms
+import torchvision
 from PIL import Image
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def conv2d(in_channel, out_channel):
     return nn.Sequential(
@@ -141,6 +144,103 @@ class CXLoss(nn.Module):
         CX = torch.mean(CX)
         return CX
 
+class VGGContextualLoss(torch.nn.Module):
+    def __init__(self, target_img):
+        super(VGGContextualLoss, self).__init__()
+        self.vgg19 = VGG19_CX().to(device)
+        self.vgg19.load_model('vgg19-dcbb9e9d.pth')
+        self.vgg19.eval()
+        self.vgg_layers = ['conv3_3', 'conv4_2']
+        self.criterion_cx = CXLoss(sigma=0.5).to(device)
+        self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+        target_img = next(iter(get_loader(1, target_img)))
+        target_img = (target_img - self.mean) / self.std
+        target_img = target_img.to(device)
+        self.target_feature = self.vgg19(target_img)
+
+    def forward(self, input_img):
+
+        input_img = next(iter(get_loader(1, input_img)))
+        input_img = (input_img - self.mean) / self.std
+        input_img = input_img.to(device)
+
+        loss_CX = torch.zeros(1).to(device)
+        with torch.no_grad():
+            image_feature = self.vgg19(input_img)
+            for l in self.vgg_layers:
+                cx = self.criterion_cx(image_feature[l], self.target_feature[l])
+                loss_CX += cx
+
+        return loss_CX.item()
+
+
+class VGG19Feats(torch.nn.Module):
+    def __init__(self, requires_grad=False):
+        super(VGG19Feats, self).__init__()
+        vgg = torchvision.models.vgg19(pretrained=True).to(device) #.cuda()
+        # vgg.eval()
+        vgg_pretrained_features = vgg.features.eval()
+        self.requires_grad = requires_grad
+        self.slice1 = torch.nn.Sequential()
+        self.slice2 = torch.nn.Sequential()
+        self.slice3 = torch.nn.Sequential()
+        self.slice4 = torch.nn.Sequential()
+        self.slice5 = torch.nn.Sequential()
+        for x in range(3): #(3):
+            self.slice1.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(3, 8): #(3, 7):
+            self.slice2.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(8, 13): #(7, 12):
+            self.slice3.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(13, 22): #(12, 21):
+            self.slice4.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(22, 31):#(21, 30):
+            self.slice5.add_module(str(x), vgg_pretrained_features[x])
+        if not self.requires_grad:
+            for param in self.parameters():
+                param.requires_grad = False
+
+    def forward(self, img):
+        conv1_2 = self.slice1(img)
+        conv2_2 = self.slice2(conv1_2)
+        conv3_2 = self.slice3(conv2_2)
+        conv4_2 = self.slice4(conv3_2)
+        conv5_2 = self.slice5(conv4_2)
+        out = [conv1_2, conv2_2, conv3_2, conv4_2, conv5_2]
+        return out
+
+
+class VGGPerceptualLoss(torch.nn.Module):
+    def __init__(self, target_img):
+        super(VGGPerceptualLoss, self).__init__()
+        self.vgg = VGG19Feats().to(device)
+        self.criterion = torch.nn.functional.l1_loss
+        self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+        self.weights = [1.0/2.6, 1.0/4.8, 1.0/3.7, 1.0/5.6, 1.0*10/1.5]
+        target_img = next(iter(get_loader(1, target_img)))
+        target_img = (target_img - self.mean) / self.std
+        target_img = target_img.to(device)
+        self.y_vgg = self.vgg(target_img)
+
+    def forward(self, input_img):
+
+        input_img = next(iter(get_loader(1, input_img)))
+        input_img = (input_img - self.mean) / self.std
+        input_img = input_img.to(device)
+
+        x_vgg = self.vgg(input_img)
+
+        loss = self.weights[0] * self.criterion(x_vgg[0], self.y_vgg[0])+\
+                            self.weights[1] * self.criterion(x_vgg[1], self.y_vgg[1])+\
+                            self.weights[2] * self.criterion(x_vgg[2], self.y_vgg[2])+\
+                            self.weights[3] * self.criterion(x_vgg[3], self.y_vgg[3])+\
+                            self.weights[4] * self.criterion(x_vgg[4], self.y_vgg[4])
+
+        return loss.item()
+
+
 class LoadImg(Dataset):
     def __init__(self,img,transforms):
         super().__init__()
@@ -159,8 +259,7 @@ class LoadImg(Dataset):
         return 1
 
 def get_loader(batch_size,img):
-    # SetRange = transforms.Lambda(lambda X: 1. - X )  # convert [0, 1] -> [0, 1]
-    SetRange = transforms.Lambda(lambda X: 2 * X - 1.)  # convert [0, 1] -> [-1, 1]
+    SetRange = transforms.Lambda(lambda X: 1. - X )  # convert [0, 1] -> [0, 1]
     T = transforms.Compose([transforms.ToTensor(),SetRange])
     dataset = LoadImg(img, T)
     dataloader = DataLoader(dataset, batch_size, shuffle=False, num_workers=0)

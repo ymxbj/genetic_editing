@@ -4,8 +4,10 @@ from io import BytesIO
 from PIL import Image
 from cairosvg import svg2png
 import torch
-from vgg_cx import VGG19_CX, CXLoss, get_loader
+from vgg_loss import VGGContextualLoss, VGGPerceptualLoss
 import time
+import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 import copy
 import argparse
@@ -13,13 +15,6 @@ import random
 import re
 import os
 from IPython.display import clear_output
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-criterion_cx = CXLoss(sigma=0.5).to(device)
-vgg19 = VGG19_CX().to(device)
-vgg19.load_model('vgg19-dcbb9e9d.pth')
-vgg19.eval()
-vgg_layers = ['conv3_3', 'conv4_2']
 
 def showImage(img):
     plt.figure()
@@ -60,8 +55,8 @@ def get_img_bbox(img):
     img = 255 - np.array(img)
     img0 = np.sum(img, axis = 0)
     img1 = np.sum(img, axis = 1)
-    y_range = np.where(img1 > 1000)[0]
-    x_range = np.where(img0 > 1000)[0]
+    y_range = np.where(img1 > 127.5)[0]
+    x_range = np.where(img0 > 127.5)[0]
     return [x_range[0],x_range[-1]], [y_range[0],y_range[-1]]
 
 def util_sample_from_img(img):
@@ -77,7 +72,6 @@ def util_sample_from_img(img):
 class Editer:
     def __init__(self,img_path,svg_path, pop_size, seed = 0):
         self.img_grey = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-        self.target_feature = vgg19(next(iter(get_loader(1, self.img_grey))).to(device))
         gx = cv2.Sobel(self.img_grey, cv2.CV_32F, 1, 0, ksize=1)
         gy = cv2.Sobel(self.img_grey, cv2.CV_32F, 0, 1, ksize=1)
         mag, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
@@ -190,6 +184,8 @@ class Editer:
         return True
 
     def Find_best_position(self):
+        # contextual_loss = VGGContextualLoss(self.img_grey)
+        perceptual_loss = VGGPerceptualLoss(self.img_grey)
         best_svg_seq = None
         min_loss = 1000
         target_bbox = get_img_bbox(self.img_grey)
@@ -197,7 +193,7 @@ class Editer:
         target_center_y = (target_bbox[1][0]+target_bbox[1][1])/2
         for scale_x in FloatRange(0.1,2,0.1):
             for scale_y in FloatRange(0.1,2,0.1):
-                for shear_x in FloatRange(-0.2,0.2,0.05):
+                for shear_x in FloatRange(-0.3,0.3,0.1):
                     # scale_x = 1
                     # scale_y = 1
                     # shear_x = 0.2
@@ -224,9 +220,10 @@ class Editer:
                             command[5] += delta_x
                             command[6] += delta_y
                     final_img = self.DrawSeq(affined_svg_seq)
-                    current_loss = self.CXloss(final_img)
-                    print(current_loss)
-                    showTwoImages(final_img, self.img_grey)
+                    # current_loss = contextual_loss(final_img, self.img_grey)
+                    current_loss = perceptual_loss(final_img)
+                    # print(current_loss)
+                    # showTwoImages(final_img, self.img_grey)
                     if current_loss <= min_loss:
                         min_loss = current_loss
                         best_svg_seq = copy.deepcopy(affined_svg_seq)
@@ -328,24 +325,6 @@ class Editer:
         render_outline = render_outline[:,:,-1]
         render_outline = cv2.bitwise_not(render_outline)
         return render_outline
-
-    # def EvaluateImg(self, render_img):
-    #     diff_img_1 = cv2.subtract(self.img_grey, render_img) #values are too low
-    #     diff_img_2 = cv2.subtract(render_img,self.img_grey) #values are too high
-    #     totalDiff_img = cv2.add(diff_img_1, diff_img_2)
-    #     totalDiff_img = np.sum(totalDiff_img)
-    #     totalDiff_img = totalDiff_img / (self.height * self.width)
-
-    #     return totalDiff_img
-    def CXloss(self, render_img):
-        loss_CX = torch.zeros(1).to(device)
-        with torch.no_grad():
-            image_feature = vgg19(next(iter(get_loader(1, render_img))).to(device))
-            for l in vgg_layers:
-                cx = criterion_cx(image_feature[l], self.target_feature[l])
-                loss_CX += cx
-        return loss_CX.item()
-
 
     def Evaluate(self, render_img, render_outline):
         diff_img_1 = cv2.subtract(self.img_grey, render_img) #values are too low
@@ -629,7 +608,7 @@ class Editer:
         new_svg = SVG(copy.deepcopy(c))
         return new_svg
 
-    def Edit(self, generations, xi, decay, prob_crs, opts):
+    def Edit(self, generations, xi, decay, prob_crs):
         self.InitPopulation()
         p_best, p_worst = self.EvaluatePopulation()
         txi = xi
@@ -681,14 +660,14 @@ class Editer:
                         plt.subplot(1,2,2)
                         plt.imshow(tmp_img, cmap='gray')
                         plt.show()
-                if g == 80 or g == 220 or g == 380:
+                if g == 80 or g == 220 or g == 400:
                     self.population[1 - self.cur][i].svg_seq = copy.deepcopy(self.DeleteCommand(self.population[1 - self.cur][i].svg_seq))
                 self.MutatePos(self.population[1 - self.cur][i],moving_dis, self.seed + time.time() + g)
 
             self.cur = 1 - self.cur
             c_best, c_worst = self.EvaluatePopulation()
 
-            if g == 80 or g == 220 or g == 380:
+            if g == 80 or g == 220 or g == 400:
                 p_best = c_best
                 p_worst = c_worst
             elif g < 100 or (g > 210 and g < 250) or (g > 350 and g < generations):
@@ -779,10 +758,10 @@ def main():
     parser.add_argument('--font_class', type=str, default='149')
     opts = parser.parse_args()
     print(opts.char_class)
-    editer = Editer(f'target_image/196_1/{opts.char_class}.png',f'source_svg/{opts.font_class}/{opts.char_class}.svg', 10, seed=time.time())
-    target_dir = f'target_svg/196_1'
-    target_outlines_dir = f'target_svg_outlines/196_1'
-    svg, img, totalDiff= editer.Edit(400, 20, 0.9, 0.8, opts)
+    editer = Editer(f'target_image/149_4/{opts.char_class}.png',f'source_svg/{opts.font_class}/{opts.char_class}.svg', 10, seed=time.time())
+    target_dir = f'target_svg/149_4'
+    target_outlines_dir = f'target_svg_outlines/149_4'
+    svg, img, totalDiff= editer.Edit(500, 20, 0.9, 0.8)
     if not __debug__:
         plt.figure()
         plt.subplot(1, 2, 1)
